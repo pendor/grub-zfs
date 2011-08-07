@@ -295,9 +295,14 @@ else
   AC_PATH_PROG(HELP2MAN, help2man)
 fi
 
+# The Solaris Portability Layer is required to link grub against zfs-lib on Linux.
+AC_CHECK_LIB([spl], [getextmntent], [ LIBS="$LIBS -pthread -lspl"
+  AC_DEFINE([HAVE_LIBSPL], [1], [Define to 1 if you have the SPL library.])],)
+
 # Check for functions and headers.
 AC_CHECK_FUNCS(posix_memalign memalign asprintf vasprintf getextmntent)
-AC_CHECK_HEADERS(libzfs.h libnvpair.h sys/param.h sys/mount.h sys/mnttab.h sys/mkdev.h)
+AC_CHECK_HEADERS(libzfs.h libnvpair.h sys/param.h sys/mount.h sys/mnttab.h sys/mkdev.h,[],[],[$ac_includes_default
+#include <zfs-linux/zfs_config.h>])
 
 AC_CHECK_MEMBERS([struct statfs.f_fstypename],,,[$ac_includes_default
 #include <sys/param.h>
@@ -922,17 +927,19 @@ AC_CHECK_LIB([lzma], [lzma_code],
                         [Define to 1 if you have the LZMA library.])],)
 AC_SUBST([LIBLZMA])
 
-AC_CHECK_LIB([zfs], [libzfs_init],
-             [LIBZFS="-lzfs"
-              AC_DEFINE([HAVE_LIBZFS], [1],
-                        [Define to 1 if you have the ZFS library.])],)
-AC_SUBST([LIBZFS])
+# These libraries and zpool below are external to libzfs on Linux,
+# but usually internal or intrinsic on other platforms.
+AC_CHECK_LIB([avl], [avl_create], [LIBS="$LIBS -lavl"])
+AC_CHECK_LIB([efi], [efi_alloc_and_init], [LIBS="$LIBS -lefi"])
+AC_CHECK_LIB([unicode], [u8_strcmp], [LIBS="$LIBS -lunicode"])
 
-AC_CHECK_LIB([nvpair], [nvlist_print],
-             [LIBNVPAIR="-lnvpair"
-              AC_DEFINE([HAVE_LIBNVPAIR], [1],
-                        [Define to 1 if you have the NVPAIR library.])],)
+AC_CHECK_LIB([nvpair], [nvlist_print], [LIBS="$LIBS -lnvpair" LIBNVPAIR="$LIBS"
+  AC_DEFINE([HAVE_LIBNVPAIR], [1], [Define to 1 if you have the NVPAIR library.])],)
 AC_SUBST([LIBNVPAIR])
+AC_CHECK_LIB([zpool], [zfs_prop_init], [LIBS="$LIBS -lzpool"])
+AC_CHECK_LIB([zfs], [libzfs_init], [LIBS="$LIBS -lzfs" LIBZFS="$LIBS"
+  AC_DEFINE([HAVE_LIBZFS], [1], [Define to 1 if you have the ZFS library.])],)
+AC_SUBST([LIBZFS])
 
 LIBS=""
 

@@ -34,6 +34,17 @@
 #include <stdint.h>
 #include <grub/util/misc.h>
 #include <grub/cryptodisk.h>
+#if defined(HAVE_LIBSPL) && defined(__linux__)
+# include <sys/ioctl.h>
+/*
+ * The Solaris Compatibility Layer provides getextmntent on Linux, which is
+ * required for grub-probe to recognize a native ZFS root filesystem on
+ * a Linux system. This typedef is required because including the SPL
+ * types.h here conflicts with an earlier Linux types.h inclusion.
+ */
+  typedef unsigned int uint_t;
+# include <libspl/sys/mnttab.h>
+#endif
 
 #ifdef HAVE_DEVICE_MAPPER
 # include <libdevmapper.h>
@@ -598,15 +609,15 @@ grub_guess_root_device (const char *dir)
   struct stat st;
   dev_t dev;
 
-#ifdef __linux__
-  if (!os_dev)
-    os_dev = grub_find_root_device_from_mountinfo (dir, NULL);
-#endif /* __linux__ */
-
 #if defined(HAVE_LIBZFS) && defined(HAVE_LIBNVPAIR)
   if (!os_dev)
     os_dev = find_root_device_from_libzfs (dir);
 #endif
+
+#ifdef __linux__
+  if (!os_dev)
+    os_dev = grub_find_root_device_from_mountinfo (dir, NULL);
+#endif /* __linux__ */
 
   if (os_dev)
     {
@@ -1399,7 +1410,7 @@ grub_find_zpool_from_dir (const char *dir, char **poolname, char **poolfs)
     *poolname = xstrdup (mnt.f_mntfromname);
   }
 #elif defined(HAVE_GETEXTMNTENT)
-  /* Solaris.  */
+  /* Solaris and ZFSonLinux (but not FUSE).  */
   {
     struct stat st;
     struct extmnttab mnt;
@@ -1407,7 +1418,17 @@ grub_find_zpool_from_dir (const char *dir, char **poolname, char **poolfs)
     if (stat (dir, &st) != 0)
       return;
 
-    FILE *mnttab = fopen ("/etc/mnttab", "r");
+    FILE *mnttab = NULL;
+
+#ifdef __linux__
+    /* Look in proc only for Linux.  Solaris (and anything else with 
+       HAVE_GETEXTMNTENT) won't need it. */
+    mnttab = fopen ("/proc/mounts", "r");
+#endif
+
+    if (! mnttab)
+      mnttab = fopen ("/etc/mnttab", "r");
+
     if (! mnttab)
       return;
 
